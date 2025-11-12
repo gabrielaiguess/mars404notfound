@@ -2,26 +2,22 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(ellipse at bottom, #0d1b2a 0%, #000 100%);
-  perspective: 1000px;
-  perspective-origin: center center;
+  background: black;
 }
 
-.space-container {
-  position: absolute;
+canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  transform-style: preserve-3d;
-  transform: translateZ(0);
+  display: block;
+  background: radial-gradient(ellipse at center, #000 40%, #050510 100%);
+  filter: brightness(1.1) contrast(1.1);
 }
 
-/* Cada partícula individual */
-.star {
-  position: absolute;
-  width: 2px;
-  height: 2px;
-  background: white;
-  border-radius: 50%;
-  box-shadow: 0 0 6px rgba(255,255,255,0.8);
-  will-change: transform, opacity;
+/* animación base (opcional para futuros elementos de UI) */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
 }
