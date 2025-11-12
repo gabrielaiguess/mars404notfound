@@ -1,0 +1,68 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  height: 200vh;
+  overflow-x: hidden;
+  background: radial-gradient(circle at center, #080814 0%, #010005 100%);
+  font-family: sans-serif;
+}
+
+/* Contenedor general */
+.space-container {
+  position: relative;
+  width: 100%;
+  height: 200vh;
+  overflow: hidden;
+}
+
+/* Capas de estrellas */
+.layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 200vh;
+  will-change: transform;
+  background-repeat: repeat;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.8;
+}
+
+/* Fondo de estrellas — puedes cambiar la textura si quieres */
+.stars {
+  background-image: url('https://www.transparenttextures.com/patterns/stardust.png');
+}
+
+/* Gradiente sutil para profundidad de color */
+.space-container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 200vh;
+  background: radial-gradient(ellipse at center, rgba(80,0,120,0.2), rgba(0,0,60,0.5) 80%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+body, html {
+  perspective: 800px;
+}
+
+.star {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: white;
+  opacity: 0.8;
+  transform: translateZ(0);
+  animation: twinkle 2s infinite ease-in-out alternate;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}

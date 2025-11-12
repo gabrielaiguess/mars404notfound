@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mars 404 Not Found</title>
+  <link rel="stylesheet" href="./assets/css/space.css">
+</head>
+<body>
+  <div class="space-container">
+    <div class="stars layer" data-speed="0.3"></div>
+    <div class="stars layer" data-speed="0.6"></div>
+    <div class="stars layer" data-speed="0.9"></div>
+  </div>
+
+ 
+     <script>
+    const space = document.querySelector('.space-container');
+
+    // Crear estrellas dinámicamente
+    const numStars = 150;
+    for (let i = 0; i < numStars; i++) {
+      const star = document.createElement('div');
+      star.classList.add('star');
+      star.style.left = `${Math.random() * 100}vw`;
+      star.style.top = `${Math.random() * 200}vh`;
+      star.style.animationDelay = `${Math.random() * 3}s`;
+      star.style.setProperty('--z', Math.random() * -1000);
+      space.appendChild(star);
+    }
+
+    // Efecto de movimiento en profundidad (eje Z)
+    document.addEventListener('scroll', () => {
+      const scroll = window.scrollY;
+      document.querySelectorAll('.star').forEach(star => {
+        const z = parseFloat(star.style.getPropertyValue('--z'));
+        const scale = 1 + scroll / 1000;
+        const translateZ = z + scroll * 0.5;
+        star.style.transform = `translateZ(${translateZ}px) scale(${scale})`;
+      });
+    });
+  </script>
+
+
+</body>
+</html>
