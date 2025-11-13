@@ -38,13 +38,13 @@
 
     .hud-section {
       position: absolute;
-      font-size: 15.4px; /* +10% respecto a 14px */
+      font-size: 15.4px;
       line-height: 1.4em;
       text-shadow: 0 0 5px #00ff88;
     }
 
     .hud-section svg {
-      width: 18px; /* +12.5% aprox */
+      width: 18px;
       height: 18px;
       stroke: #00ff88;
       stroke-width: 1.4;
@@ -53,8 +53,16 @@
       margin-right: 6px;
     }
 
-    #navigation { top: 30px; left: 40px; }
-    #vitals { bottom: 40px; right: 50px; text-align: right; }
+    #navigation { 
+      top: 30px; 
+      left: 40px; 
+    }
+
+    #vitals { 
+      bottom: 40px; 
+      right: 50px; 
+      text-align: right; 
+    }
 
     canvas.hud-chart {
       display: block;
@@ -76,6 +84,13 @@
       <div>Velocidad orbital: <span id="speed">-- km/h</span></div>
       <div>Presión cabina: <span id="pressure">-- kPa</span></div>
       <div>Temp. exterior: <span id="temp">-- °C</span></div>
+
+      <!-- 🪐 RADAR PLANETARIO -->
+      <div style="margin-top: 16px;">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+        Escaneo Planetario:
+      </div>
+      <canvas id="planetRadar" class="hud-chart" width="220" height="220"></canvas>
     </div>
 
     <!-- ❤️ CONSTANTES VITALES Y SISTEMAS -->
@@ -97,79 +112,69 @@
     </div>
   </div>
 
+  <!-- 🌌 FONDO ESTELAR -->
+  <script>
+    const canvas = document.getElementById("space");
+    const ctx = canvas.getContext("2d");
+    let w = window.innerWidth, h = window.innerHeight;
+    canvas.width = w; canvas.height = h;
 
- <!-- 🌌 FONDO ESTELAR TIPO TÚNEL -->
-<script>
-  const canvas = document.getElementById("space");
-  const ctx = canvas.getContext("2d");
-  let w = window.innerWidth, h = window.innerHeight;
-  canvas.width = w; 
-  canvas.height = h;
+    const numStars = 1600;
+    const tunnelDepth = 3000;
+    const speed = 0.9;
+    const colors = [
+      [255, 255, 255],
+      [200, 220, 255],
+      [255, 200, 240],
+      [220, 255, 230],
+      [245, 235, 255]
+    ];
 
-  const numStars = 1600;
-  const tunnelDepth = 3000;
-  const speed = 0.9;
+    const stars = Array.from({ length: numStars }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.pow(Math.random(), 0.4) * Math.max(w, h) * 1.2;
+      const baseColor = colors[Math.floor(Math.random() * colors.length)];
+      return {
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        z: Math.random() * tunnelDepth,
+        opacity: Math.random() * 0.4 + 0.3,
+        color: baseColor,
+        pulseSpeed: Math.random() * 0.015 + 0.005
+      };
+    });
 
-  const colors = [
-    [255, 255, 255],
-    [200, 220, 255],
-    [255, 200, 240],
-    [220, 255, 230],
-    [245, 235, 255]
-  ];
+    function drawStars() {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+      ctx.fillRect(0, 0, w, h);
 
-  const stars = Array.from({ length: numStars }, () => {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = Math.pow(Math.random(), 0.4) * Math.max(w, h) * 1.2; 
-    const baseColor = colors[Math.floor(Math.random() * colors.length)];
-    return {
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
-      z: Math.random() * tunnelDepth,
-      opacity: Math.random() * 0.4 + 0.3,
-      color: baseColor,
-      pulseSpeed: Math.random() * 0.015 + 0.005
-    };
-  });
+      for (const s of stars) {
+        s.z -= speed;
+        if (s.z <= 0) s.z = tunnelDepth;
+        const k = 200 / s.z;
+        const x = w / 2 + s.x * k;
+        const y = h / 2 + s.y * k;
+        if (x < 0 || x > w || y < 0 || y > h) continue;
+        const o = s.opacity + Math.sin(performance.now() * s.pulseSpeed) * 0.1;
+        const [r, g, b] = s.color;
+        const size = Math.max(0.1, (1 - s.z / tunnelDepth) * 1.4);
+        ctx.beginPath();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = `rgba(${r},${g},${b},${o})`;
+        ctx.fillStyle = `rgba(${r},${g},${b},${o})`;
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
 
-  function draw() {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.fillRect(0, 0, w, h);
-
-    for (const s of stars) {
-      s.z -= speed;
-      if (s.z <= 0) s.z = tunnelDepth;
-
-      const k = 200 / s.z;
-      const x = w / 2 + s.x * k;
-      const y = h / 2 + s.y * k;
-
-      if (x < 0 || x > w || y < 0 || y > h) continue;
-
-      const o = s.opacity + Math.sin(performance.now() * s.pulseSpeed) * 0.1;
-      const [r, g, b] = s.color;
-      const size = Math.max(0.1, (1 - s.z / tunnelDepth) * 1.4);
-
-      ctx.beginPath();
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = `rgba(${r},${g},${b},${o})`;
-      ctx.fillStyle = `rgba(${r},${g},${b},${o})`;
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      requestAnimationFrame(drawStars);
     }
-
-    requestAnimationFrame(draw);
-  }
-
-  draw();
-
-  window.addEventListener('resize', () => {
-    w = canvas.width = window.innerWidth;
-    h = canvas.height = window.innerHeight;
-  });
-</script>
-
+    drawStars();
+    window.addEventListener('resize', () => {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    });
+  </script>
 
   <!-- 💚 HUD DINÁMICO -->
   <script>
@@ -187,7 +192,6 @@
     };
     setInterval(upd, 4000); upd();
 
-    // ==== Ritmo cardíaco: onda ====
     function waveChart(id, speed = 1.2){
       const c=document.getElementById(id), ctx=c.getContext('2d');
       let t=0;
@@ -207,7 +211,6 @@
       } anim();
     }
 
-    // ==== Oxígeno: gráfico tipo tarta ====
     function oxygenPieChart(id) {
       const c = document.getElementById(id), ctx = c.getContext("2d");
       let oxygen = 100;
@@ -217,13 +220,11 @@
         const cy = c.height / 2;
         const r = 28;
         const end = (oxygen / 100) * Math.PI * 2;
-
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI*2);
-        ctx.strokeStyle = "rgba(0,255,136,0.15)";
+        ctx.strokeStyle = "rgba(0,255,136,0.25)";
         ctx.lineWidth = 8;
         ctx.stroke();
-
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.arc(cx, cy, r, -Math.PI/2, end - Math.PI/2);
@@ -234,17 +235,80 @@
         ctx.shadowColor = "#00ff88";
         ctx.fill();
         ctx.globalAlpha = 1;
-
         oxygen -= Math.random() * 0.08;
         if (oxygen <= 5) oxygen = 100;
         requestAnimationFrame(anim);
       }
       anim();
     }
+// 🪐 PLANETA RADAR PEQUEÑO Y DETALLADO
+function planetRadar(id) {
+  const c = document.getElementById(id), ctx = c.getContext("2d");
+  let angle = 0;
+  let blinkTimer = 0;
+
+  function anim() {
+    ctx.clearRect(0, 0, c.width, c.height);
+    const cx = c.width / 2;
+    const cy = c.height / 2;
+    const r = 55;
+
+    // Líneas del radar
+    ctx.strokeStyle = "rgba(0,255,136,0.8)";
+    ctx.lineWidth = 2.3;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.65, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+    ctx.stroke();
+
+    // Ecos sutiles
+    for (let i = 0; i < 35; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.random() * r * 0.9;
+      const x = cx + Math.cos(a + angle / 40) * rr;
+      const y = cy + Math.sin(a + angle / 40) * rr;
+      ctx.fillStyle = "rgba(0,255,136,0.25)";
+      ctx.fillRect(x, y, 1.5, 1.5);
+    }
+
+    // Barrido animado
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, "rgba(0,255,136,0.35)");
+    grad.addColorStop(1, "rgba(0,255,136,0)");
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + Math.PI / 8);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Punto parpadeante
+    blinkTimer += 1;
+    if (blinkTimer % 100 < 50) {
+      const bx = cx + Math.cos(angle * 1.8) * (r * 0.6);
+      const by = cy + Math.sin(angle * 1.8) * (r * 0.6);
+      ctx.beginPath();
+      ctx.arc(bx, by, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#00ff88";
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = "#00ff88";
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    angle += 0.025;
+    requestAnimationFrame(anim);
+  }
+  anim();
+}
 
     waveChart("heartChart", 0.7);
     oxygenPieChart("oxygenChart");
+    planetRadar("planetRadar");
   </script>
-
 </body>
 </html>
