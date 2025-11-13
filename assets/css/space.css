@@ -1,23 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
 html, body {
   margin: 0;
   height: 100%;
-  overflow: hidden;
   background: black;
+  font-family: "Share Tech Mono", monospace;
+  color: #00ff88;
+  overflow: hidden;
 }
 
-canvas {
+canvas#space {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  display: block;
   background: radial-gradient(ellipse at center, #000 40%, #050510 100%);
-  filter: brightness(1.1) contrast(1.1);
+  z-index: 1;
 }
 
-/* animación base (opcional para futuros elementos de UI) */
-@keyframes twinkle {
-  0%, 100% { opacity: 0.85; }
-  50% { opacity: 1; }
+.hud {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud-section {
+  position: absolute;
+  font-size: 14px;
+  line-height: 1.4em;
+  text-shadow: 0 0 5px #00ff88;
+}
+
+/* POSICIONES */
+#navigation {
+  top: 30px;
+  left: 40px;
+}
+
+#vitals {
+  bottom: 40px;
+  right: 50px;
+  text-align: right;
+}
+
+/* GRÁFICOS */
+canvas.hud-chart {
+  display: block;
+  margin-top: 6px;
 }
