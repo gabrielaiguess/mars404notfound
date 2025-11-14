@@ -1,74 +1,17 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mars HUD con Varias Imágenes 3D</title>
+    <title>Mars HUD</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap"
       rel="stylesheet"
     />
-    <style>
-      body {
-        margin: 0;
-        background: black;
-        font-family: "Share Tech Mono", monospace;
-        color: #00ff88;
-        overflow: hidden;
-      }
-      canvas#space {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        display: block;
-        background: radial-gradient(ellipse at center, #000 40%, #050510 100%);
-        z-index: 1;
-      }
-      .hud {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-        z-index: 10;
-      }
-      .hud-section {
-        position: absolute;
-        font-size: 15.4px;
-        line-height: 1.4em;
-        text-shadow: 0 0 5px #00ff88;
-      }
-      .hud-section svg {
-        width: 18px;
-        height: 18px;
-        stroke: #00ff88;
-        stroke-width: 1.4;
-        fill: none;
-        vertical-align: middle;
-        margin-right: 6px;
-      }
-      #navigation {
-        top: 30px;
-        left: 40px;
-      }
-      #vitals {
-        bottom: 40px;
-        right: 50px;
-        text-align: right;
-      }
-      canvas.hud-chart {
-        display: block;
-        margin-top: 6px;
-      }
-    </style>
+    <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <canvas id="space"></canvas>
-
-    <!-- HUD -->
     <div class="hud">
       <div id="navigation" class="hud-section">
         <div>
@@ -77,21 +20,25 @@
         </div>
         <div>Trayectoria: Órbita transmarciana</div>
         <div>Distancia a Marte: <span id="distance">-- km</span></div>
-        <div>Velocidad orbital: <span id="speed">-- km/h</span></div>
+        <div>
+          Velocidad orbital: <span id="speedLabel">-- km/h</span>
+          <div class="speed-meter">
+            <div class="meter"><div id="speedBar" class="bar"></div></div>
+          </div>
+        </div>
         <div>Presión cabina: <span id="pressure">-- kPa</span></div>
         <div>Temp. exterior: <span id="temp">-- °C</span></div>
         <div style="margin-top: 16px">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg
-          >Escaneo Planetario:
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /></svg>
+          Escaneo Planetario:
         </div>
         <canvas
           id="planetRadar"
-          class="hud-chart"
+          class="hud-chart hudP"
           width="220"
           height="220"
         ></canvas>
       </div>
-
       <div id="vitals" class="hud-section">
         <div>
           <svg viewBox="0 0 24 24">
@@ -143,18 +90,29 @@
         </div>
       </div>
     </div>
-
-    <!-- ESTRELLAS -->
     <script>
       const canvas = document.getElementById("space");
       const ctx = canvas.getContext("2d");
       let w = window.innerWidth,
         h = window.innerHeight;
-      canvas.width = w;
-      canvas.height = h;
 
-      const numStars = 1600;
-      const tunnelDepth = 3000;
+      // limitar devicePixelRatio para evitar tamaños de canvas enormes en pantallas hi-dpi
+      let dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      function resizeCanvas() {
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      resizeCanvas();
+
+      // número ajustado de estrellas (aumentado para mejor fondo) y profundidad
+      const numStars = 2000;
+      const tunnelDepth = 2200;
+      const starSpeed = 0.9;
       const colors = [
         [255, 255, 255],
         [200, 220, 255],
@@ -165,8 +123,7 @@
 
       const stars = Array.from({ length: numStars }, () => {
         const angle = Math.random() * Math.PI * 2;
-        const radius =
-          Math.pow(Math.random() * 0.4, 0.4) * Math.max(w, h) * 1.2;
+        const radius = Math.pow(Math.random(), 0.4) * Math.max(w, h) * 1.2;
         const baseColor = colors[Math.floor(Math.random() * colors.length)];
         return {
           x: Math.cos(angle) * radius,
@@ -174,189 +131,918 @@
           z: Math.random() * tunnelDepth,
           opacity: Math.random() * 0.4 + 0.3,
           color: baseColor,
+          pulseSpeed: Math.random() * 0.015 + 0.005,
         };
       });
 
-      function drawStars() {
-        ctx.fillStyle = "rgba(0,0,0,0.45)";
+      // drawStars optimizado: usa fillRect para estrellas pequeñas (más rápido que arc) y evita shadowBlur por estrella
+      function drawStars(now) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
         ctx.fillRect(0, 0, w, h);
         for (const s of stars) {
-          s.z -= 0.9;
-          if (s.z <= 0) s.z = tunnelDepth;
-          const k = 200 / s.z,
-            x = w / 2 + s.x * k,
-            y = h / 2 + s.y * k;
-          if (x < 0 || x > w || y < 0 || y > h) continue;
+          // detener movimiento de estrellas cuando llegamos a destino
+          if (distanceKm > 0) {
+            s.z -= starSpeed;
+            if (s.z <= 0) s.z = tunnelDepth;
+          }
+          const k = 200 / s.z;
+          const x = w / 2 + s.x * k;
+          const y = h / 2 + s.y * k;
+          if (x < -5 || x > w + 5 || y < -5 || y > h + 5) continue;
+          const o = Math.max(
+            0,
+            Math.min(1, s.opacity + Math.sin(now * s.pulseSpeed) * 0.08)
+          );
           const [r, g, b] = s.color;
-          const size = Math.max(0.1, (1 - s.z / tunnelDepth) * 1.4);
-          ctx.beginPath();
-          ctx.fillStyle = `rgba(${r},${g},${b},${s.opacity})`;
-          ctx.arc(x, y, size, 0, Math.PI * 2);
-          ctx.fill();
+          const size = Math.max(0.4, (1 - s.z / tunnelDepth) * 1.2);
+          ctx.fillStyle = `rgba(${r},${g},${b},${o})`;
+          // cuadrado pequeño es más rápido que arc para muchas partículas
+          ctx.fillRect(x - size / 2, y - size / 2, size, size);
         }
       }
       window.addEventListener("resize", () => {
-        w = canvas.width = window.innerWidth;
-        h = canvas.height = window.innerHeight;
+        // recalcular dpr al redimensionar para nuevas configuraciones de pantalla
+        dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        resizeCanvas();
       });
+
+      // ---- variables de telemetría (dependen de la velocidad) ----
+      function randInitial(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+      let heartRate = Math.floor(randInitial(68, 78));
+      let oxygenPct = Math.floor(randInitial(60, 100));
+      let pressureKpa = randInitial(98, 102);
+      let tempExtC = Math.floor(randInitial(-120, -40));
+      // distancia en kilómetros (calcularemos el valor inicial más abajo para que sea significativo)
+      let distanceKm = 0;
+      // integridad del casco: empieza en 100%, disminuye cuando los objetos escapan
+      let hullIntegrity = 100;
+      window.hullIntegrity = hullIntegrity; // exponer globalmente para verificación
+      let gameOver = false;
+
+      // constantes para mapeo
+      const BASE_ORBITAL = 25000; // km/h base mostrados
+      const KM_PER_OBJUNIT = 1500; // km/h por unidad de objSpeed
+
+      function updateTelemetry(dtSeconds) {
+        const displayed = Math.max(
+          0,
+          Math.floor(BASE_ORBITAL + objSpeed * KM_PER_OBJUNIT)
+        );
+        // reducir distancia según la velocidad mostrada (trabajar en kilómetros)
+        const kmPerSec = displayed / 3600; // km por segundo
+        const deltaKm = kmPerSec * dtSeconds;
+        distanceKm = Math.max(0, distanceKm - deltaKm);
+        
+        // detener todo cuando llegamos a destino (0.0 M km)
+        if (distanceKm <= 0 && objSpeed > 0) {
+          targetObjSpeed = 0;
+          objSpeed = 0;
+          arrived = true;
+          console.log('🎯 Llegada al destino - distancia: 0.0 M km');
+        }
+
+        const speedFactor = Math.min(
+          1,
+          objSpeed / (typeof MAX_OBJ_SPEED !== "undefined" ? MAX_OBJ_SPEED : 24)
+        );
+
+        // objetivos de presión y temperatura
+        const pressureTarget = 100 + speedFactor * 20; // 100 -> 120 kPa
+        const tempTarget = -90 + speedFactor * 60; // -90 -> -30 °C
+
+        // suavizar hacia los objetivos
+        const smooth = Math.min(1, dtSeconds * 0.6);
+        pressureKpa += (pressureTarget - pressureKpa) * smooth;
+        tempExtC += (tempTarget - tempExtC) * smooth;
+
+        // objetivo y suavizado de ritmo cardíaco
+        const heartTarget = 70 + speedFactor * 40; // 70 -> 110 bpm
+        heartRate += (heartTarget - heartRate) * Math.min(1, dtSeconds * 0.9);
+
+        // drenaje de oxígeno: base + extra dependiendo de la velocidad
+        const baseDrainPerSec = 0.01; // % por segundo en reposo
+        const extraDrainPerSec = 0.6 * speedFactor; // hasta +0.6%/s a máxima velocidad
+        oxygenPct = Math.max(
+          0,
+          oxygenPct - (baseDrainPerSec + extraDrainPerSec) * dtSeconds
+        );
+
+        // actualizar elementos DOM solo si el throttle lo permite
+        if (domUpdateCounter <= 0) {
+          const dEl = document.getElementById("distance");
+          if (dEl) {
+            // mostrar distancia escalada en millones de km
+            const displayedDistanceMillions = (distanceKm * 1000000) / 1000000;
+            dEl.textContent = displayedDistanceMillions.toFixed(2) + " M km";
+          }
+          const pEl = document.getElementById("pressure");
+          if (pEl) pEl.textContent = pressureKpa.toFixed(1) + " kPa";
+          const tEl = document.getElementById("temp");
+          if (tEl) tEl.textContent = Math.round(tempExtC) + " °C";
+          const hEl = document.getElementById("heart");
+          if (hEl) hEl.textContent = Math.round(heartRate) + " bpm";
+          const oEl = document.getElementById("oxygen");
+          if (oEl) oEl.textContent = Math.max(0, Math.floor(oxygenPct)) + " %";
+        }
+      }
     </script>
 
-    <!-- OBJETOS RADIALES -->
     <script>
-      const sources = [
-        "https://ik.imagekit.io/ig1zyhrhpc/platano%20man%20404.png?updatedAt=1763059678585",
-        "https://ik.imagekit.io/ig1zyhrhpc/ilustraciones%20espacio-13.png?updatedAt=1763059681213",
-        "https://ik.imagekit.io/ig1zyhrhpc/ilustraciones%20espacio-12.png?updatedAt=1763059681394",
-        "https://ik.imagekit.io/ig1zyhrhpc/ilustraciones%20espacio-09.png?updatedAt=1763059681351",
-        "https://ik.imagekit.io/ig1zyhrhpc/marvin%20404-2.png?updatedAt=1763059681505",
-        "https://ik.imagekit.io/ig1zyhrhpc/ilustraciones%20espacio-11.png?updatedAt=1763059681680",
-        "https://ik.imagekit.io/ig1zyhrhpc/marciano%20404.png?updatedAt=1763059682050",
-        "https://ik.imagekit.io/ig1zyhrhpc/saturno.png?updatedAt=1763059682012",
+      // ========================================
+      // configuración de imágenes con probabilidades
+      // ========================================
+      // cada objeto tiene: src (ruta), weight (peso/probabilidad)
+      
+      const imageConfig = [
+        // rocas y asteroides (alta probabilidad)
+        { src: 'sources/images/roca.png', weight: 15 },
+        { src: 'sources/images/roca1.png', weight: 15 },
+        { src: 'sources/images/rocas.png', weight: 15 },
+        
+        // planetas (probabilidad media)
+        { src: 'sources/images/jupiter.png', weight: 5 },
+        { src: 'sources/images/saturno.webp', weight: 5 },
+        { src: 'sources/images/neptuno.png', weight: 5 },
+        { src: 'sources/images/venus.png', weight: 5 },
+        
+        // satélite (probabilidad media)
+        { src: 'sources/images/satelite.webp', weight: 5 },
+        
+        // aliens y personajes (baja probabilidad)
+        { src: 'sources/images/marciano.webp', weight: 2 },
+        { src: 'sources/images/marvin.webp', weight: 2 },
+        
+        // objetos raros (muy baja probabilidad)
+        { src: 'sources/images/platano.webp', weight: 1 },
+        { src: 'sources/images/huevo.png', weight: 1 },
+        { src: 'sources/images/choco bollo.png', weight: 1 },
+        { src: 'sources/images/ilustraciones espacio-10.png', weight: 1 },
+      ];
+      
+      // ========================================
+      // CONFIGURACIÓN DE LA ESTRELLA
+      // ========================================
+      // MODIFICA AQUÍ LA PROBABILIDAD Y VELOCIDAD DE LA ESTRELLITA
+      
+      const ESTRELLITA_PROBABILITY = 1;   // ← CAMBIA ESTE VALOR (0.0 a 1.0)
+                                          // 0.05 = 5% de probabilidad (ultra rara)
+                                          // 0.10 = 10% (rara)
+                                          // 0.20 = 20% (poco común)
+                                          // 0.50 = 50% (común)
+                                          // 1.00 = 100% (siempre aparece)
+      
+      const ESTRELLITA_SPEED = 5;         // ← CAMBIA ESTE VALOR
+                                          // velocidad multiplicador (6 = 6x más rápida)
+                                          // 3 = 3x más rápida (medio rápida)
+                                          // 6 = 6x más rápida (muy rápida)
+                                          // 10 = 10x más rápida (ultra rápida)
+      
+      // configuración interna (no modificar)
+      const estrellitaConfig = {
+        src: 'sources/images/estrellita.png',
+        probability: ESTRELLITA_PROBABILITY,
+        speedMultiplier: ESTRELLITA_SPEED
+      };
+      // ========================================
+
+      // cargar todas las imágenes
+      const images = [];
+      let imagesLoaded = 0;
+      const MAX_CACHE_WIDTH = 700; // ancho máximo para imágenes pre-escaladas en caché (reduce costo de drawImage)
+      
+      imageConfig.forEach((config) => {
+        const img = new Image();
+        img.src = config.src;
+        img.weight = config.weight; // guardar el peso en la imagen
+        img.onload = () => {
+          imagesLoaded++;
+          try {
+            // crear una versión en caché más pequeña para dibujar cada frame
+            const scale = Math.min(1, MAX_CACHE_WIDTH / img.width);
+            if (scale < 1) {
+              const c = document.createElement("canvas");
+              c.width = Math.round(img.width * scale);
+              c.height = Math.round(img.height * scale);
+              const cc = c.getContext("2d");
+              cc.drawImage(img, 0, 0, c.width, c.height);
+              img._cached = c; // guardar canvas como versión en caché
+            }
+          } catch (e) {
+            // el dibujo cross-origin puede fallar; ignorar y usar la imagen original
+            console.warn("fallo al cachear imagen", e);
+          }
+        };
+        images.push(img);
+      });
+      
+      // cargar la estrellita por separado
+      const estrellitaImg = new Image();
+      estrellitaImg.src = estrellitaConfig.src;
+      estrellitaImg.isEstrellita = true; // marcar como especial
+      estrellitaImg.speedMultiplier = estrellitaConfig.speedMultiplier;
+      estrellitaImg.onload = () => {
+        try {
+          const scale = Math.min(1, MAX_CACHE_WIDTH / estrellitaImg.width);
+          if (scale < 1) {
+            const c = document.createElement("canvas");
+            c.width = Math.round(estrellitaImg.width * scale);
+            c.height = Math.round(estrellitaImg.height * scale);
+            const cc = c.getContext("2d");
+            cc.drawImage(estrellitaImg, 0, 0, c.width, c.height);
+            estrellitaImg._cached = c;
+          }
+        } catch (e) {
+          console.warn("fallo al cachear estrellita", e);
+        }
+      };
+
+      // hacer objs y maxZ globales para que el script de click pueda acceder
+      window.objs = [];
+      const objs = window.objs; // mantener referencia local
+      const spawnInterval = 1000; // aparece un objeto cada segundo
+      let objSpeed = 12; // velocidad inicial (el juego empieza en movimiento)
+      let targetObjSpeed = objSpeed; // objetivo suave para interacciones
+      const MAX_OBJ_SPEED = 24; // usado para normalización de UI y límite
+      const maxZ = 3000;
+      window.maxZ = maxZ; // exponer maxZ globalmente
+      const minZ = -500; // hasta donde pueden retroceder antes de borrarse
+      const maxObjs = 30; // límite de objetos en pantalla
+
+      // contador de objetos totales creados (límite: 20)
+      let totalObjectsSpawned = 0;
+      const MAX_TOTAL_OBJECTS = 20;
+      
+            // estado del juego
+      let allObjectsSpawned = false; // true cuando se crearon los 20 objetos
+      let arrived = false; // true cuando llegas al destino (0.0 M km)
+      
+      // planeta misterioso renderizado desde el inicio (invisible al principio)
+      const mysteryPlanetImg = new Image();
+      mysteryPlanetImg.src = 'sources/images/notmartefound.png';
+      let mysteryPlanetLoaded = false;
+      mysteryPlanetImg.onload = () => {
+        mysteryPlanetLoaded = true;
+        console.log('🪐 Planeta misterioso cargado');
+      };
+      mysteryPlanetImg.onerror = () => {
+        console.warn('No se pudo cargar notmartefound.jpg');
+        mysteryPlanetLoaded = false;
+      };
+      let mysteryPlanet = {
+        visible: true // siempre visible pero muy pequeño al inicio
+      };
+      
+      // ========================================
+      // sistema de spawn: todos los objetos aparecen al menos 1 vez
+      // las rocas pueden aparecer múltiples veces para completar los 20
+      // la estrellita tiene probabilidad de reemplazar algún objeto
+      // ========================================
+      
+      // crear pool de spawn: cada imagen al menos 1 vez
+      const spawnPool = [];
+      
+      images.forEach(img => {
+        spawnPool.push(img);
+      });
+      
+      // identificar rocas (pueden repetirse)
+      const rockImages = images.filter(img => 
+        img.src.includes('roca')
+      );
+      
+      // completar hasta 20 con rocas adicionales
+      while (spawnPool.length < MAX_TOTAL_OBJECTS) {
+        const randomRock = rockImages[Math.floor(Math.random() * rockImages.length)];
+        spawnPool.push(randomRock);
+      }
+      
+      // intentar añadir estrellita con probabilidad configurada
+      // reemplaza 1-2 objetos aleatorios si aparece
+      const numEstrellitas = Math.random() < estrellitaConfig.probability ? 
+        (Math.random() < 0.5 ? 1 : 2) : 0;
+      
+      for (let i = 0; i < numEstrellitas; i++) {
+        const randomIndex = Math.floor(Math.random() * spawnPool.length);
+        spawnPool[randomIndex] = estrellitaImg;
+      }
+      
+      if (numEstrellitas > 0) {
+        console.log(`⭐ ${numEstrellitas} estrellita(s) añadida(s) al pool!`);
+      }
+      
+      // mezclar el pool aleatoriamente (algoritmo Fisher-Yates)
+      for (let i = spawnPool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [spawnPool[i], spawnPool[j]] = [spawnPool[j], spawnPool[i]];
+      }
+      
+      console.log(`📦 pool de spawn creado: ${spawnPool.length} objetos`);
+
+      // Calcular distancia inicial para que dure 25 segundos a velocidad máxima
+      const displayedMax = BASE_ORBITAL + MAX_OBJ_SPEED * KM_PER_OBJUNIT;
+      const initialDistanceKm = (displayedMax * 25) / 3600; // km
+      distanceKm = initialDistanceKm;
+
+      // puntos de donde salen los objetos (siempre los mismos en orden)
+      const entryPoints = [
+        { x: -400, y: -300, name: "top-left" }, // esquina arriba izq
+        { x: 400, y: -300, name: "top-right" }, // esquina arriba der
+        { x: -400, y: 300, name: "bottom-left" }, // esquina abajo izq
+        { x: 400, y: 300, name: "bottom-right" }, // esquina abajo der
+        { x: -600, y: 0, name: "left" }, // lateral izq
+        { x: 600, y: 0, name: "right" }, // lateral der
+        { x: 0, y: -400, name: "top" }, // arriba centro
+        { x: 0, y: 400, name: "bottom" }, // abajo centro
       ];
 
-      const objs = [];
-      const fixedSpeed = 1;
-      const initialRadiusMax = 200;
+      let currentEntryIndex = 0; // va rotando entre los puntos
 
-      function addObjectWithDelay(src, delay) {
-        setTimeout(() => {
-          const img = new Image();
-          img.src = src;
-          const angle = Math.random() * Math.PI * 2;
-          const radius = Math.random() * initialRadiusMax;
-          const obj = {
-            img,
-            angle,
-            radius,
-            z: 3000,
-            speed: fixedSpeed,
-            alpha: 0,
-            scaleFactor: 0.05,
-          };
-          objs.push(obj);
+      function createObject() {
+        // detener creación si ya se alcanzó el límite de 20 objetos totales
+        if (totalObjectsSpawned >= MAX_TOTAL_OBJECTS) {
+          if (!allObjectsSpawned) {
+            allObjectsSpawned = true;
+            console.log("🛑 límite alcanzado: 20 objetos creados");
+          }
+          return;
+        }
 
-          img.onload = () => {
-            let fade = 0;
-            const fadeInterval = setInterval(() => {
-              fade += 0.02;
-              obj.alpha = Math.min(fade, 1);
-              if (fade >= 1) clearInterval(fadeInterval);
-            }, 30);
-          };
-        }, delay);
+        // requiere al menos una imagen lista
+        if (imagesLoaded < 1) return;
+        if (objs.length >= maxObjs) return; // evitar demasiados objetos
+        
+        // seleccionar la siguiente imagen del pool pre-generado
+        const img = spawnPool[totalObjectsSpawned];
+
+        // agarrar el siguiente punto de la lista (van rotando)
+        const entryPoint = entryPoints[currentEntryIndex];
+        currentEntryIndex = (currentEntryIndex + 1) % entryPoints.length;
+
+        // calcular hacia donde van desde ese punto
+        const angle = Math.atan2(entryPoint.y, entryPoint.x);
+
+        objs.push({
+          img,
+          angle,
+          z: maxZ,
+          x: entryPoint.x,
+          y: entryPoint.y,
+          entryPoint: entryPoint.name,
+          rotationSpeed: (Math.random() - 0.5) * 0.02,
+          rotation: Math.random() * Math.PI * 2,
+        });
+
+        totalObjectsSpawned++;
       }
 
-      sources.forEach((src, i) => addObjectWithDelay(src, i * 2000));
+      setInterval(createObject, spawnInterval);
 
+      // controlar velocidad con la rueda del mouse:
+      // - rueda hacia abajo (deltaY > 0) acelera hacia adelante
+      // - rueda hacia arriba (deltaY < 0) frena pero no invierte la dirección
+      const MIN_OBJ_SPEED = 6; // velocidad mínima (no puede frenar más allá de esto)
+      
+      window.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const delta = e.deltaY;
+          const accelMultiplier = e.shiftKey ? 3 : 1.6;
+          if (delta > 0) {
+            // scroll hacia abajo: acelerar hacia adelante
+            targetObjSpeed = Math.min(
+              MAX_OBJ_SPEED,
+              targetObjSpeed + Math.abs(delta) * 0.02 * accelMultiplier
+            );
+          } else if (delta < 0) {
+            // scroll hacia arriba: frenar (pero no menos de MIN_OBJ_SPEED)
+            targetObjSpeed = Math.max(
+              MIN_OBJ_SPEED,
+              targetObjSpeed - Math.abs(delta) * 0.02 * accelMultiplier
+            );
+          }
+        },
+        { passive: false }
+      );
+
+      function drawMysteryPlanet() {
+        // solo dibujar si el planeta está disponible y cargado
+        if (!mysteryPlanet || !mysteryPlanetLoaded || !mysteryPlanetImg.complete) return;
+        
+        // verificar que initialDistanceKm esté definido
+        if (typeof initialDistanceKm === 'undefined' || initialDistanceKm <= 0) return;
+        
+        // calcular progreso basado en distancia restante (1 = inicio, 0 = llegada)
+        const distanceProgress = distanceKm / initialDistanceKm;
+        
+        // el planeta crece inversamente a la distancia
+        const growthFactor = 1 - distanceProgress;
+        
+        // tamaño mínimo visible (punto diminuto al inicio)
+        const minSize = 3;
+        const maxSize = Math.max(w, h) * 0.6; // tamaño máximo al llegar
+        
+        // crecimiento mucho más gradual - crece significativamente solo al final
+        // usar exponente alto (4) para que crezca muy lento al principio
+        const size = minSize + (maxSize - minSize) * Math.pow(growthFactor, 4);
+        
+        // opacidad aumenta gradualmente
+        const opacity = 0.05 + 0.95 * Math.pow(growthFactor, 2.5);
+        
+        const cx = w / 2;
+        const cy = h / 2;
+        
+        ctx.save();
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(
+          mysteryPlanetImg,
+          cx - size / 2,
+          cy - size / 2,
+          size,
+          size
+        );
+        ctx.restore();
+      }
+      
       function drawObjects() {
-        for (const obj of objs) {
-          obj.z -= obj.speed;
-          obj.radius += obj.speed;
-          const px = w / 2 + Math.cos(obj.angle) * obj.radius;
-          const py = h / 2 + Math.sin(obj.angle) * obj.radius;
+        objs.sort((a, b) => b.z - a.z);
+        for (let i = objs.length - 1; i >= 0; i--) {
+          const obj = objs[i];
+          
+          // la estrellita se mueve más rápido que los demás objetos
+          const speedMultiplier = obj.img.isEstrellita ? obj.img.speedMultiplier : 1;
+          obj.z -= objSpeed * speedMultiplier;
+          obj.rotation += obj.rotationSpeed;
 
-          const baseScale = 1200 / (obj.z + 100);
-          obj.scaleFactor += 0.005;
-          const pw = obj.img.width * baseScale * obj.scaleFactor;
-          const ph = obj.img.height * baseScale * obj.scaleFactor;
+          // borrar objetos que se fueron muy lejos
+          if (obj.z < minZ || obj.z > maxZ + 500) {
+            objs.splice(i, 1);
+            continue;
+          }
 
-          const disappearAlpha = Math.max(0, Math.min(1, 1 - baseScale * 0.6));
-          const alpha = Math.min(obj.alpha, disappearAlpha);
+          const scale = 1000 / obj.z;
+          const screenX = w / 2 + obj.x * scale;
+          const screenY = h / 2 + obj.y * scale;
+          // crecimiento lineal del tamaño
+          const distanceFactor = 1 - obj.z / maxZ; // 0 lejos, 1 cerca
+          const rawSize = 30 + distanceFactor * 390; // 30 a 420
+          const MAX_DRAW_SIZE = 420;
+          const size = Math.min(MAX_DRAW_SIZE, rawSize);
+          const source = obj.img._cached || obj.img;
+          const pw = (source.width / source.height) * size;
+          const ph = size;
+          const margin = Math.max(pw, ph) * 2;
 
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(obj.img, px - pw / 2, py - ph / 2, pw, ph);
-          ctx.globalAlpha = 1;
+          // detectar si el objeto escapó de la pantalla (no fue clickeado)
+          if (
+            objSpeed > 0 &&
+            (screenX < -margin ||
+              screenX > w + margin ||
+              screenY < -margin ||
+              screenY > h + margin)
+          ) {
+            // penalizar: reducir integridad del casco (la estrellita no penaliza)
+            if (!gameOver && !obj.wasDestroyed && !obj.img.isEstrellita) {
+              hullIntegrity = Math.max(0, hullIntegrity - 10); // -10%
+              window.hullIntegrity = hullIntegrity;
+            }
+            objs.splice(i, 1);
+            continue;
+          }
 
-          if (alpha <= 0) {
-            obj.z = 3000;
-            obj.radius = Math.random() * initialRadiusMax;
-            obj.angle = Math.random() * Math.PI * 2;
-            obj.alpha = 0;
-            obj.scaleFactor = 0.05;
+          // fade para aparecer y desaparecer suave
+          let fadeInFactor = 1;
+          if (obj.z > maxZ - 500) {
+            // aparecer gradual
+            fadeInFactor = Math.min(1, (maxZ - obj.z) / 500);
+          } else if (obj.z < 200) {
+            // desaparecer cuando están muy cerca
+            fadeInFactor = Math.max(0, obj.z / 200);
+          }
+
+          ctx.save();
+          ctx.globalAlpha = fadeInFactor;
+          ctx.translate(screenX, screenY);
+          ctx.rotate(obj.rotation);
+          ctx.drawImage(source, -pw / 2, -ph / 2, pw, ph);
+          ctx.restore();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      function updateSpeedUI() {
+        const baseSpeed = 25000;
+        const perUnit = 1500;
+        
+        // ajustar para que muestre 0 km/h cuando está en velocidad mínima
+        // restamos MIN_OBJ_SPEED para que el rango sea de 0 a MAX_OBJ_SPEED
+        const adjustedSpeed = Math.max(0, objSpeed - MIN_OBJ_SPEED);
+        const displayed = Math.max(
+          0,
+          Math.floor(baseSpeed + adjustedSpeed * perUnit)
+        );
+        
+        const label = document.getElementById("speedLabel");
+        const bar = document.getElementById("speedBar");
+        if (label) label.textContent = displayed.toLocaleString() + " km/h";
+        if (bar) {
+          // la barra también debe reflejar el rango ajustado
+          const pct = Math.min(1, adjustedSpeed / (MAX_OBJ_SPEED - MIN_OBJ_SPEED));
+          bar.style.width = pct * 100 + "%";
+        }
+      }
+
+      // limitador de frames simple
+      let lastFrame = 0;
+      const targetFPS = 55;
+      const frameInterval = 1000 / targetFPS;
+      
+      // throttle para actualizaciones DOM (actualizar cada 3 frames)
+      let domUpdateCounter = 0;
+      const DOM_UPDATE_INTERVAL = 3;
+
+      function approach(current, target, step) {
+        if (Math.abs(target - current) <= step) return target;
+        return current + Math.sign(target - current) * step;
+      }
+
+      // Estado compartido para charts (se actualizan en el loop principal)
+      let chartState = {
+        heartT: 0,
+        displayedHeart: typeof heartRate !== "undefined" ? heartRate : 75,
+        displayedOxygen: typeof oxygenPct !== "undefined" ? oxygenPct : 100,
+        radarAngle: 0,
+        radarBlink: 0
+      };
+      
+      function updateWaveChart(id) {
+        const c = document.getElementById(id);
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        ctx.clearRect(0, 0, c.width, c.height);
+        
+        if (typeof heartRate !== "undefined")
+          chartState.displayedHeart += (heartRate - chartState.displayedHeart) * 0.08;
+        // la amplitud escala con el ritmo cardíaco
+        const amp = 4 + Math.max(0, (chartState.displayedHeart - 60) * 0.2);
+        const frequency = 18;
+        ctx.beginPath();
+        for (let x = 0; x < c.width; x++) {
+          const y =
+            c.height / 2 +
+            Math.sin((x + chartState.heartT) / frequency) * amp +
+            Math.cos((x + chartState.heartT) / (frequency * 2.2)) * (amp * 0.4);
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "#00ff88";
+        ctx.lineWidth = 1.6;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = "#00ff88";
+        ctx.stroke();
+        chartState.heartT += 1.5;
+      }
+
+      function updateOxygenChart(id) {
+        const c = document.getElementById(id);
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        ctx.clearRect(0, 0, c.width, c.height);
+        const cx = c.width - 40,
+          cy = c.height / 2,
+          r = 28;
+        const oxygen =
+          typeof oxygenPct !== "undefined" ? oxygenPct : chartState.displayedOxygen;
+        
+        chartState.displayedOxygen += (oxygen - chartState.displayedOxygen) * 0.06;
+        const end = (chartState.displayedOxygen / 100) * Math.PI * 2;
+
+        // cambio de color según el nivel
+        const col =
+          chartState.displayedOxygen > 50
+            ? "#00ff88"
+            : chartState.displayedOxygen > 25
+            ? "#ffbf3f"
+            : "#ff4d4d";
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(0,255,136,0.25)";
+        ctx.lineWidth = 8;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, -Math.PI / 2, end - Math.PI / 2);
+        ctx.closePath();
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.9;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = col;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      function updatePlanetRadar(id) {
+        const c = document.getElementById(id);
+        if (!c) return;
+        const ctx = c.getContext("2d");
+        ctx.clearRect(0, 0, c.width, c.height);
+        const cx = c.width / 2,
+          cy = c.height / 2,
+          r = 55;
+        ctx.strokeStyle = "rgba(0,255,136,0.8)";
+        ctx.lineWidth = 2.3;
+        // anillos y cruz
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.65, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - r, cy);
+        ctx.lineTo(cx + r, cy);
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx, cy + r);
+        ctx.stroke();
+
+        // sector de barrido (visual)
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0, "rgba(0,255,136,0.35)");
+        grad.addColorStop(1, "rgba(0,255,136,0)");
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, chartState.radarAngle, chartState.radarAngle + Math.PI / 8);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Comportamiento del marcador del planeta
+        if (
+          typeof distanceKm !== "undefined" &&
+          typeof initialDistanceKm !== "undefined"
+        ) {
+          const markerAngle = -Math.PI / 2;
+          const sweepAngle = Math.PI / 8;
+          const TAU = Math.PI * 2;
+          const norm = (a) => {
+            let v = a % TAU;
+            if (v < 0) v += TAU;
+            return v;
+          };
+          const sweepStart = norm(chartState.radarAngle);
+          const sweepEnd = norm(chartState.radarAngle + sweepAngle);
+          const mAng = norm(markerAngle);
+
+          const inSweep = (() => {
+            if (sweepStart <= sweepEnd)
+              return mAng >= sweepStart && mAng <= sweepEnd;
+            return mAng >= sweepStart || mAng <= sweepEnd;
+          })();
+
+          if (distanceKm <= initialDistanceKm && inSweep) {
+            const prop = Math.min(1, distanceKm / initialDistanceKm);
+            const markerRadius = 6;
+            const mx = cx + Math.cos(markerAngle) * (r * 0.9 * prop);
+            const my = cy + Math.sin(markerAngle) * (r * 0.9 * prop);
+            const pulse = 1 + Math.sin(chartState.radarBlink * 0.25) * 0.08;
+            ctx.beginPath();
+            ctx.arc(mx, my, markerRadius * pulse, 0, Math.PI * 2);
+            ctx.fillStyle = "#00ff88";
+            ctx.shadowBlur = 14;
+            ctx.shadowColor = "#00ff88";
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+
+        chartState.radarBlink += 1;
+        chartState.radarAngle += 0.025;
+      }
+
+      // función para dibujar el mensaje de llegada al destino
+      function drawArrival() {
+        // NO hay overlay - las letras se dibujan directamente sobre el planeta
+
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.font = 'bold 72px "Share Tech Mono", monospace';
+        ctx.fillStyle = "#ff4d4d";
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = "#ff4d4d";
+        ctx.fillText("ERROR 404", w / 2, h / 2 - 40);
+
+        ctx.font = '32px "Share Tech Mono", monospace';
+        ctx.fillStyle = "#00ff88";
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = "#00ff88";
+        ctx.fillText("MARS NOT FOUND", w / 2, h / 2 + 30);
+
+        ctx.restore();
+      }
+
+      function animate() {
+        const now = performance.now();
+        const dt = now - lastFrame;
+        if (dt < frameInterval && lastFrame !== 0) {
+          requestAnimationFrame(animate);
+          return;
+        }
+        // suavizar objSpeed hacia targetObjSpeed
+        objSpeed = approach(objSpeed, targetObjSpeed, 0.4);
+
+        const dtSeconds = lastFrame === 0 ? frameInterval / 1000 : dt / 1000;
+        lastFrame = now;
+
+        // verificar game over
+        if (hullIntegrity <= 0 && !gameOver) {
+          gameOver = true;
+          console.log("game over - integridad del casco: 0%");
+          // detener el juego
+          targetObjSpeed = 0;
+          objSpeed = 0;
+        }
+
+        // no hay victoria por destruir objetos - el viaje continúa
+        
+        // actualizar telemetría (presión/temp/etc/distancia) basado en velocidad
+        updateTelemetry(dtSeconds);
+        
+        // decrementar contador de throttle
+        domUpdateCounter--;
+        if (domUpdateCounter < 0) domUpdateCounter = DOM_UPDATE_INTERVAL;
+
+        drawStars(now);
+        drawObjects();
+        drawMysteryPlanet();
+        updateSpeedUI();
+        
+        // actualizar charts HUD (sincronizados con loop principal)
+        updateWaveChart("heartChart");
+        updateOxygenChart("oxygenChart");
+        updatePlanetRadar("planetRadar");
+
+        if (arrived) {
+          drawArrival();
+        }
+
+        requestAnimationFrame(animate);
+      }
+      animate();
+    </script>
+
+    <script>
+      const rand = (min, max) => Math.random() * (max - min) + min;
+
+      function updateHUD() {
+        document.getElementById("energy").textContent =
+          Math.floor(rand(60, 100)) + " %";
+        document.getElementById("tempInt").textContent =
+          Math.floor(rand(18, 23)) + " °C";
+        const hullEl = document.getElementById("hull");
+        if (hullEl) {
+          hullEl.textContent = Math.max(0, Math.floor(hullIntegrity)) + " %";
+          if (hullIntegrity < 30) {
+            hullEl.style.color = "#ff4d4d";
+          } else if (hullIntegrity < 60) {
+            hullEl.style.color = "#ffbf3f";
+          } else {
+            hullEl.style.color = "#00ff88";
           }
         }
       }
 
-      function animate() {
-        drawStars();
-        drawObjects();
-        drawRadar();
-        drawCharts();
-        requestAnimationFrame(animate);
-      }
+      setInterval(updateHUD, 500);
+      updateHUD();
+    </script>
+    <script>
+      (function () {
+        const bgMusic = new Audio("sources/sounds/song.m4a");
+        bgMusic.loop = true;
+        bgMusic.volume = 0.3; // volumen bajo para no interferir con efectos
+        bgMusic.preload = "auto";
 
-      // HUD charts
-      const radarCanvas = document.getElementById("planetRadar");
-      const radarCtx = radarCanvas.getContext("2d");
-      const heartCanvas = document.getElementById("heartChart");
-      const heartCtx = heartCanvas.getContext("2d");
-      const oxygenCanvas = document.getElementById("oxygenChart");
-      const oxygenCtx = oxygenCanvas.getContext("2d");
-
-      let heartData = [];
-      let oxygenValue = 100;
-
-      function drawRadar() {
-        radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
-        const cx = radarCanvas.width / 2,
-          cy = radarCanvas.height / 2;
-        const maxRadius = radarCanvas.width / 2 - 10;
-        radarCtx.strokeStyle = "#00ff88";
-        radarCtx.lineWidth = 1.2;
-        radarCtx.beginPath();
-        radarCtx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
-        radarCtx.stroke();
-
-        const time = Date.now() * 0.002;
-        for (let i = 1; i <= 3; i++) {
-          radarCtx.beginPath();
-          radarCtx.arc(
-            cx,
-            cy,
-            (i * maxRadius) / 3 + ((time * 20) % maxRadius),
-            0,
-            Math.PI * 2
+        // Intentar reproducir al cargar (algunos navegadores requieren interacción)
+        bgMusic.play().catch(() => {
+          // Si falla por política de autoplay, reproducir en el primer click
+          document.addEventListener(
+            "click",
+            function playOnce() {
+              bgMusic.play();
+              document.removeEventListener("click", playOnce);
+            },
+            { once: true }
           );
-          radarCtx.strokeStyle = `rgba(0,255,136,${1 - i * 0.25})`;
-          radarCtx.stroke();
-        }
-      }
-
-      function drawHeart() {
-        if (heartData.length > heartCanvas.width) heartData.shift();
-        const last = heartData[heartData.length - 1] || 25;
-        const next = last + (Math.random() * 6 - 3);
-        heartData.push(Math.max(5, Math.min(45, next)));
-
-        heartCtx.clearRect(0, 0, heartCanvas.width, heartCanvas.height);
-        heartCtx.strokeStyle = "#00ff88";
-        heartCtx.lineWidth = 2;
-        heartCtx.beginPath();
-        heartData.forEach((v, i) => {
-          const y = heartCanvas.height / 2 - v / 2;
-          if (i === 0) heartCtx.moveTo(i, y);
-          else heartCtx.lineTo(i, y);
         });
-        heartCtx.stroke();
-      }
 
-      function drawOxygen() {
-        oxygenValue += Math.random() * 2 - 1;
-        oxygenValue = Math.max(50, Math.min(100, oxygenValue));
+        console.log("Música de fondo cargada");
+      })();
+    </script>
+    <script>
+      // Manejo de clics sobre el canvas para "disparar" objetos dibujados
+      (function () {
+        // pre-cargar audio para minimizar latencia
+        const shootSrc = "sources/sounds/shoot.mp3";
+        const shootAudio = new Audio(shootSrc);
+        shootAudio.preload = "auto";
+        shootAudio.volume = 0.7; // ajustar volumen
 
-        oxygenCtx.clearRect(0, 0, oxygenCanvas.width, oxygenCanvas.height);
-        oxygenCtx.fillStyle = "#00ff88";
-        const h = oxygenCanvas.height * (oxygenValue / 100);
-        oxygenCtx.fillRect(0, oxygenCanvas.height - h, oxygenCanvas.width, h);
-      }
+        console.log("Click handler cargado. Audio source:", shootSrc);
 
-      function drawCharts() {
-        drawHeart();
-        drawOxygen();
-      }
+        // helper para reproducir sonido
+        function playShoot() {
+          console.log("Reproduciendo sonido...");
+          const sound = shootAudio.cloneNode();
+          sound.play().catch((err) => {
+            console.warn("Error reproduciendo sonido:", err);
+            // fallback: intentar con el audio original
+            shootAudio.currentTime = 0;
+            shootAudio
+              .play()
+              .catch((e) => console.error("Error en fallback:", e));
+          });
+        }
 
-      animate();
+        const canvasEl = document.getElementById("space");
+        if (!canvasEl) {
+          console.error("Canvas #space no encontrado");
+          return;
+        }
+
+        console.log("Canvas encontrado, añadiendo listener de click");
+
+        canvasEl.addEventListener("click", (ev) => {
+          console.log("Click detectado en canvas");
+
+          const rect = canvasEl.getBoundingClientRect();
+          const mx = ev.clientX - rect.left;
+          const my = ev.clientY - rect.top;
+
+          console.log("Coordenadas click:", mx, my);
+          console.log(
+            "Objetos disponibles:",
+            window.objs ? window.objs.length : 0
+          );
+
+          if (!window.objs || !Array.isArray(window.objs)) {
+            console.warn("window.objs no está disponible");
+            return;
+          }
+
+          let hitDetected = false;
+
+          for (let i = window.objs.length - 1; i >= 0; i--) {
+            const obj = window.objs[i];
+            if (!obj || !obj.img) continue;
+
+            // calcular posición en pantalla (mismo cálculo que drawObjects)
+            const scale = 1000 / obj.z;
+            const screenX = window.innerWidth / 2 + obj.x * scale;
+            const screenY = window.innerHeight / 2 + obj.y * scale;
+
+            // calcular tamaño (mismo cálculo lineal que drawObjects)
+            const distanceFactor = 1 - obj.z / (window.maxZ || 2500);
+            const rawSize = 30 + distanceFactor * 390;
+            const size = Math.min(420, rawSize);
+            const source = obj.img._cached || obj.img;
+            const pw =
+              source.width && source.height
+                ? (source.width / source.height) * size
+                : size;
+            const ph = size;
+            const radius = Math.max(pw, ph) * 0.6; // área de click generosa
+
+            // test de colisión circular
+            const dx = mx - screenX;
+            const dy = my - screenY;
+            const distSq = dx * dx + dy * dy;
+
+            if (distSq <= radius * radius) {
+              console.log(
+                "HIT! Objeto",
+                i,
+                "eliminado en posición",
+                screenX,
+                screenY
+              );
+              obj.wasDestroyed = true; // marcar como destruido para evitar penalización
+              window.objs.splice(i, 1);
+              playShoot();
+              hitDetected = true;
+              break;
+            }
+          }
+
+          if (!hitDetected) {
+            console.log("No se detectó hit en ningún objeto");
+          }
+        });
+      })();
     </script>
   </body>
 </html>
-A
