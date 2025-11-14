@@ -1,0 +1,90 @@
+body {
+      margin: 0;
+      background: black;
+      font-family: "Share Tech Mono", monospace;
+      color: #00ff88;
+      overflow: hidden;
+    }
+
+body:hover{
+    cursor: crosshair;
+}
+
+    canvas#space {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: radial-gradient(ellipse at center, #000 40%, #050510 100%);
+      z-index: 1;
+    }
+
+    .hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .hud-section {
+      position: absolute;
+      font-size: 15.4px;
+      line-height: 1.4em;
+      text-shadow: 0 0 5px #00ff88;
+    }
+
+    .hud-section svg {
+      width: 18px;
+      height: 18px;
+      stroke: #00ff88;
+      stroke-width: 1.4;
+      fill: none;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    #navigation { 
+      top: 30px; 
+      left: 40px; 
+    }
+
+    #vitals { 
+      bottom: 40px; 
+      right: 50px; 
+      text-align: right; 
+    }
+
+    canvas.hudP {
+      display: block;
+      margin-top: -40px;
+    }
+
+    /* Speed meter styles */
+    .speed-meter {
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 8px;
+      width: 110px;
+    }
+
+    .speed-meter .meter {
+      width: 100%;
+      height: 8px;
+      background: rgba(0,255,136,0.08);
+      border: 1px solid rgba(0,255,136,0.12);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .speed-meter .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00ff88, #00c78a);
+      box-shadow: 0 0 8px rgba(0,255,136,0.25);
+      transition: width 140ms linear;
+    }
